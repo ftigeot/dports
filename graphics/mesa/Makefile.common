@@ -5,16 +5,13 @@
 # Remember to upgrade the following ports everytime you bump MESAVERSION:
 #
 #    - graphics/libosmesa
-#    - graphics/mesa-dri
-#    - graphics/mesa-libs
+#    - graphics/mesa
 #    - lang/clover
-#
-# $FreeBSD$
 
 MESAVERSION=	${MESABASEVERSION}${MESASUBVERSION:C/^(.)/.\1/}
 MESADISTVERSION=${MESABASEVERSION}${MESASUBVERSION:C/^(.)/-\1/}
 
-MESABASEVERSION=	18.3.2
+MESABASEVERSION=	20.0.7
 # if there is a subversion, don't include the '-' between 7.11-rc2.
 MESASUBVERSION=
 
@@ -25,32 +22,49 @@ MASTER_SITES=	https://mesa.freedesktop.org/archive/ \
 
 DISTFILES=	mesa-${MESADISTVERSION}${EXTRACT_SUFX}
 
-MAINTAINER=	x11@FreeBSD.org
+MAINTAINER=	ftigeot@wolfpond.org
 
 COMPONENT=	${PORTNAME:tl:C/^lib//:C/mesa-//}
 
 BUILD_DEPENDS+=	${LOCALBASE}/libdata/pkgconfig/pthread-stubs.pc:devel/libpthread-stubs
+BUILD_DEPENDS+=	${LOCALBASE}/bin/python3:lang/python3
+BUILD_DEPENDS+=	${PYTHON_PKGNAMEPREFIX}mako>=0.8:textproc/py-mako@${PY_FLAVOR}
+BUILD_DEPENDS+=	wayland-protocols>=1.8:graphics/wayland-protocols
+
 LIB_DEPENDS+=	libexpat.so:textproc/expat2
+LIB_DEPENDS+=	libelf.so:devel/libelf
+
+.if ${COMPONENT} == libs
+NO_BUILD=	yes
+.endif
+
 .if ${COMPONENT} != clover
 USES+=		xorg
 .endif
+
 .if ${COMPONENT} != osmesa
 LIB_DEPENDS+=	libdrm.so:graphics/libdrm
 .endif
-.if ${COMPONENT} != libs
-LIB_DEPENDS+=	libglapi.so:graphics/mesa-libs
-.endif
-.if ${OPSYS} == DragonFly
-LIB_DEPENDS+=	libelf.so:devel/libelf
-.endif
 
-USES+=		compiler:c++11-lib bison gettext-tools gmake libtool \
-		localbase pathfix pkgconfig python:2.7,build shebangfix tar:xz
+USES+=	bison gettext-tools gettext-runtime meson ninja
+USES+=	localbase pathfix pkgconfig shebangfix tar:xz
+USES+=	python:3.6+,build
+
 USE_LDCONFIG=	yes
-GNU_CONFIGURE=	yes
+
+USE_XORG=	xorgproto x11 xcb xdamage xext \
+		xfixes xshmfence xxf86vm \
+		xrandr \
+		xau \
+		xdmcp
+
+LIB_DEPENDS+=	libvdpau.so:multimedia/libvdpau
+LIB_DEPENDS+=	libwayland-egl.so:graphics/wayland
+LIB_DEPENDS+=	libffi.so:devel/libffi
+LIB_DEPENDS+=	libLLVM.so:devel/llvm${LLVM_DEFAULT}
 
 # only have one port to check with portscout.
-.if ${PORTNAME} != mesa-dri
+.if ${PORTNAME} != mesa
 PORTSCOUT=	ignore:1
 .endif
 
@@ -62,7 +76,7 @@ SHEBANG_FILES=	src/gallium/*/*/*.py src/gallium/tools/trace/*.py \
 		src/mesa/main/get_*.py src/util/format_srgb.py \
 		src/amd/*/*.py src/intel/genxml/gen_pack_header.py
 
-MASTERDIR=	${.CURDIR:H:H}/graphics/mesa-dri
+MASTERDIR=	${.CURDIR:H:H}/graphics/mesa
 PATCHDIR=	${MASTERDIR}/files
 WRKSRC=		${WRKDIR}/mesa-${MESADISTVERSION}
 DESCR=		${.CURDIR}/pkg-descr
@@ -74,39 +88,32 @@ INSTALL_TARGET=	install-strip
 
 .include <bsd.port.pre.mk>
 
-.if ${ARCH} == powerpc64
-LLVM_DEFAULT=	90
-.elif ${LLVM_DEFAULT:S,-devel,990,} >= 90
+.if ${LLVM_DEFAULT:S,-devel,990,} >= 90
 LLVM_DEFAULT=	80
 .endif
 
-.if ${ARCH} == aarch64 || ${ARCH} == x86_64 || ${ARCH:Marm*} || ${ARCH} == i386 || ${ARCH:Mmips*} || ${ARCH:Mpowerpc*}
 BUILD_DEPENDS+=	llvm${LLVM_DEFAULT}>=3.9.0_4:devel/llvm${LLVM_DEFAULT}
-.if ${COMPONENT} != libs
-. if defined(STATIC_LLVM)
-# zrj: justdoitTM will avoid installing llvmX0 for all R-cran octave ports.
-CONFIGURE_ARGS+=	--enable-llvm-shared-libs=no
-.else
 RUN_DEPENDS+=	llvm${LLVM_DEFAULT}>=3.9.0_4:devel/llvm${LLVM_DEFAULT}
-. endif
-.endif
+
+#.if ${COMPONENT} != libs
+#. if defined(STATIC_LLVM)
+## zrj: justdoitTM will avoid installing llvmX0 for all R-cran octave ports.
+##MESON_ARGS+=	-Denable-llvm-shared-libs=no
+#.else
+#RUN_DEPENDS+=	llvm${LLVM_DEFAULT}>=3.9.0_4:devel/llvm${LLVM_DEFAULT}
+#. endif
+#.endif
 CONFIGURE_ENV+=	LLVM_CONFIG=${LOCALBASE}/bin/llvm-config${LLVM_DEFAULT}
 LDFLAGS+=	-Wl,-rpath=${LOCALBASE}/llvm${LLVM_DEFAULT}/lib
-CONFIGURE_ARGS+=	--enable-llvm
-.else
-CONFIGURE_ARGS+=	--disable-llvm
-.endif
-
-# There are issues that need to be fixed to use TLS model "initial-exec"
-# So stick with "global-dynamic"'s model for now. kan@ is working on a
-# patch for rtld. We might want to backport global-dynamic or
-# pthread_setspecific which it uses now by default. But since this
-# configure switch is going away ...
-# https://lists.freebsd.org/pipermail/freebsd-arch/2016-February/017699.html
-CONFIGURE_ARGS+=	--disable-glx-tls
 
 # we don't care about GLes v1
-CONFIGURE_ARGS+=	--disable-gles1
+MESON_ARGS+=	-Dgles1=false
 
-# avoid unrecognized line command on vulcan drivers
-CONFIGURE_ENV+=		ax_cv_check_cflags___Wno_initializer_overrides=no
+MESON_ARGS+=	-Ddri-drivers=i965,r100,r200 \
+		-Dgallium-drivers=swrast,r300,r600,radeonsi \
+		-Dprefer-iris=false \
+		-Dgallium-vdpau=true \
+		-Dvulkan-drivers=""
+
+CFLAGS+=	-I/usr/include/compat
+CXXFLAGS+=	-I/usr/include/compat

@@ -3,7 +3,6 @@
 
 PORTNAME=	libosmesa
 PORTVERSION=	${MESAVERSION}
-PORTREVISION=	6
 CATEGORIES=	graphics
 
 COMMENT=	Off-Screen Mesa implementation of the OpenGL API
@@ -11,23 +10,13 @@ COMMENT=	Off-Screen Mesa implementation of the OpenGL API
 USE_XORG=	xorgproto
 
 .include <bsd.port.options.mk>
-.include "${.CURDIR:H:H}/graphics/mesa-dri/Makefile.common"
+.include "${.CURDIR:H:H}/graphics/mesa/Makefile.common"
 
-CONFIGURE_ARGS+=	--disable-dri --disable-egl --disable-gbm \
-			--disable-gles2 --with-gallium-drivers=swrast
-MESA_BUILD_WRKSRC=	src/util src/compiler src/mapi src/mesa
-LDFLAGS_i386=		-Wl,-znotext
+MESON_ARGS=		-Ddri-drivers="" -Dgallium-drivers=swrast -Dvulkan-drivers="" \
+			-Degl=false -Dgbm=false -Dgles2=false \
+			-Dosmesa=gallium
 
-.if ${ARCH} == aarch64 || ${ARCH} == x86_64 || ${ARCH:Marm*} || ${ARCH} == i386 || ${ARCH:Mmips*} || ${ARCH:Mpowerpc*}
-CONFIGURE_ARGS+=	--enable-osmesa-gallium
-MESA_BUILD_WRKSRC+=	src/gallium
-MESA_INSTALL_WRKSRC=	src/gallium/state_trackers/osmesa src/gallium/targets/osmesa
-.else
-CONFIGURE_ARGS+=	--enable-osmesa
-MESA_INSTALL_WRKSRC=	src/mesa/drivers/osmesa
-.endif
-
-.include "${MASTERDIR}/Makefile.targets"
+BUILD_DEPENDS+=		${LOCALBASE}/libdata/pkgconfig/libdrm.pc:graphics/libdrm
 
 post-install:
 	@${MKDIR} ${STAGEDIR}${PREFIX}/include/GL

@@ -1,0 +1,8 @@
+This package contains the Mesa OpenGL libraries for GLX and EGL clients
+as well as client drivers for DRI2+
+
+With a X Server configured for DRI, they allow direct rendering of hardware-
+accelerated OpenGL. This package also includes the software renderer, either
+llvmpipe or classic SWrast.
+
+WWW: https://www.mesa3d.org/
